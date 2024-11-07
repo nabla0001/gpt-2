@@ -30,3 +30,4 @@ implementation for those interested in the original paper.
 
 [3] A. Gokaslan, V. Cohen. [OpenWebText Corpus](http://Skylion007.github.io/OpenWebTextCorpus). 2019.
 
+[4] D. Jurafsky, J. Martin. [Speech and Language Processing](https://web.stanford.edu/~jurafsky/slp3/ed3book.pdf). 2024.

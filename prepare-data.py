@@ -6,13 +6,8 @@ from pathlib import Path
 from tqdm import tqdm
 
 if __name__ == '__main__':
-
-    # download OpenWebText data
-    # split in train/val
-    # tokenize with tiktoken
-    # write out to .bin files
     # creates
-    #   data/train.bin  [18GB,	9B tokens]
+    #   data/train.bin  [18GB, 9B tokens]
     #   data/test.bin   [8.7MB, 4M tokens]
 
     # parameters
@@ -61,5 +56,3 @@ if __name__ == '__main__':
 
         print(f'{split}\t{set_len / 1000}k tokens')
         data.flush()
-
-
