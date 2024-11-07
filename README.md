@@ -10,12 +10,12 @@ an open-source approximation of OpenAI's proprietary WebText dataset which was u
 This dataset is sufficiently large to expose us to some of the challenges of large-scale training and challenge us to care about
 efficiency in tokenization, data-processing and model. It will (hopefully) also result in a more interesting language model 
 than if we only used toy data. 
-At the same time, it is possible to train on this data on consumer-grade hardware like a Macbook.
+At the same time, it is possible to train on this data on consumer-grade hardware.
 
-Overview:
-* Tokenization
-* GPT-1 architecture
-* Training on OpenWebText
+
+The code is based on Andrej Karpathy's fantastic [nanoGPT](https://github.com/karpathy/nanoGPT/tree/master) but aims to 
+be more readable and focused on re-producing (Radford et al. 2018). This means that a good chunk of additional functionality
+Andrej is building in his repo is dropped to hopefully make the implementation easy to follow.
 
 ## References
 
