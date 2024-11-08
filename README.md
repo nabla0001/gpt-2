@@ -5,7 +5,7 @@ The goal of this project is to implement the first [**Generative Pre-trained Tra
 
 
 We will train it on [OpenWebText](https://skylion007.github.io/OpenWebTextCorpus/), 
-an open-source approximation of OpenAI's proprietary WebText dataset which was used to train GPT-2 (Radford et al 2019).
+an open-source approximation of OpenAI's proprietary WebText dataset which was used to train GPT-2 (Radford et al. 2019).
 
 This dataset is sufficiently large to expose us to some of the challenges of large-scale training and challenge us to care about
 efficiency in tokenization, data-processing and model. It will (hopefully) also result in a more interesting language model 

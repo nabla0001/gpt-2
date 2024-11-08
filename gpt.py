@@ -52,6 +52,12 @@ class MultiheadSelfAttention(nn.Module):
         self.config = config
         self.n_heads = config.n_heads
 
+        if self.config.embedding_size % config.n_heads != 0:
+            raise ValueError(f'embedding_size [{config.embedding_size}] must be multiple of n_heads [{config.n_heads}]')
+
+        self.d_attn = self.config.embedding_size // config.n_heads
+        self.scaled_dot_product_factor = 1. / math.sqrt(self.d_attn)
+
         # each head projects Q, K, V to Dx[D/H]
         # we perform multiplication for all H heads in one go, hence DxD (=Dx[D/H]*H)
         # bias=False because LayerNorm has bias
@@ -71,14 +77,13 @@ class MultiheadSelfAttention(nn.Module):
         k = self.key(x)     # N, CONTEXT_SIZE, EMBEDDING_SIZE
         v = self.value(x)   # N, CONTEXT_SIZE, EMBEDDING_SIZE
 
-        D_ATTN = D // self.n_heads
-        q = q.view(N, T, self.n_heads, D_ATTN).transpose(1, 2) # N, N_HEADS, CONTEXT_SIZE, D_ATTN
-        k = k.view(N, T, self.n_heads, D_ATTN).transpose(1, 2) # N, N_HEADS, CONTEXT_SIZE, D_ATTN
-        v = v.view(N, T, self.n_heads, D_ATTN).transpose(1, 2) # N, N_HEADS, CONTEXT_SIZE, D_ATTN
+        q = q.view(N, T, self.n_heads, self.d_attn).transpose(1, 2) # N, N_HEADS, CONTEXT_SIZE, D_ATTN
+        k = k.view(N, T, self.n_heads, self.d_attn).transpose(1, 2) # N, N_HEADS, CONTEXT_SIZE, D_ATTN
+        v = v.view(N, T, self.n_heads, self.d_attn).transpose(1, 2) # N, N_HEADS, CONTEXT_SIZE, D_ATTN
 
         # scaled dot product attention
         attn = q @ k.transpose(-2, -1) # N, N_HEADS, CONTEXT_SIZE, CONTEXT_SIZE
-        attn = attn / math.sqrt(D_ATTN)
+        attn = attn * self.scaled_dot_product_factor
         # mask out the future
         future_mask = torch.triu(torch.ones_like(attn), diagonal=1).bool()
         attn = attn.masked_fill(future_mask, float('-inf'))
