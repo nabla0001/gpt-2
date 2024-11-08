@@ -63,6 +63,27 @@ class GPT(nn.Module):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
+
+# input:    N, CONTEXT_SIZE, EMBEDDING_SIZE
+# output:   N, CONTEXT_SIZE, EMBEDDING_SIZE
+class TransformerBlock(nn.Module):
+    """Pre-norm Transformer Block."""
+    def __init__(self, config: GPTConfig):
+        super().__init__()
+        self.config = config
+        self.ln1 = nn.LayerNorm(config.embedding_size)
+        self.self_attn = MultiheadSelfAttention(config)
+        self.ffn = FFN(config)
+        self.ln2 = nn.LayerNorm(config.embedding_size)
+
+    def forward(self, x: FloatTensor) -> FloatTensor:
+        out = self.ln1(x)
+        out = self.self_attn(out)
+        out = out + x
+        out = out + self.ffn(self.ln2(out))
+        return out
+
+
 # input:    N, CONTEXT_SIZE, EMBEDDING_SIZE
 # output:   N, CONTEXT_SIZE, EMBEDDING_SIZE
 class MultiheadSelfAttention(nn.Module):
@@ -113,6 +134,7 @@ class MultiheadSelfAttention(nn.Module):
         out = self.out_dropout(out)
         return out
 
+
 # input:    N, CONTEXT_SIZE, EMBEDDING_SIZE
 # output:   N, CONTEXT_SIZE, EMBEDDING_SIZE
 class FFN(nn.Module):
@@ -129,23 +151,4 @@ class FFN(nn.Module):
         out = self.gelu(out)
         out = self.fc2(out)
         out = self.dropout(out)
-        return out
-
-# input:    N, CONTEXT_SIZE, EMBEDDING_SIZE
-# output:   N, CONTEXT_SIZE, EMBEDDING_SIZE
-class TransformerBlock(nn.Module):
-    """Pre-norm Transformer Block."""
-    def __init__(self, config: GPTConfig):
-        super().__init__()
-        self.config = config
-        self.ln1 = nn.LayerNorm(config.embedding_size)
-        self.self_attn = MultiheadSelfAttention(config)
-        self.ffn = FFN(config)
-        self.ln2 = nn.LayerNorm(config.embedding_size)
-
-    def forward(self, x: FloatTensor) -> FloatTensor:
-        out = self.ln1(x)
-        out = self.self_attn(out)
-        out = out + x
-        out = out + self.ffn(self.ln2(out))
         return out
