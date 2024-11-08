@@ -1,6 +1,6 @@
 import pytest
 import torch
-from gpt import GPTConfig, MultiheadSelfAttention
+from gpt import GPTConfig, MultiheadSelfAttention, FFN
 
 @pytest.fixture
 def config():
@@ -54,6 +54,12 @@ def test_self_attention_batch_independence():
         else:
             for token_grad in grad:
                 assert not torch.all(token_grad == 0).item(), f'{sample_i} gradient is 0\n{grad}'
+
+def test_ffn(config):
+    ffn = FFN(config)
+    batch_input = torch.rand(10, config.context_size, config.embedding_size)
+    output = ffn(batch_input)
+    assert output.shape == batch_input.shape
 
 @pytest.mark.skipif(not torch.cuda.is_available() and not torch.backends.mps.is_available(),
                     reason='no gpu {cuda, mps} detected')

@@ -31,6 +31,7 @@ class GPTConfig:
     vocab_size: int = 50304
     context_size: int = 1024
     embedding_size: int = 768
+    ffn_d: int = 3072
     n_heads: int = 12
     dropout: float = 0.0
 
@@ -95,6 +96,25 @@ class MultiheadSelfAttention(nn.Module):
         out = out.transpose(1, 2).reshape(N, T, D)
         out = self.out_linear(out)
         out = self.out_dropout(out)
+        return out
+
+# input:    N, CONTEXT_SIZE, EMBEDDING_SIZE
+# output:   N, CONTEXT_SIZE, EMBEDDING_SIZE
+class FFN(nn.Module):
+    """Position-wise Feedforward Network (FFN)"""
+    def __init__(self, config: GPTConfig):
+        super().__init__()
+        self.config = config
+        self.fc1 = nn.Linear(config.embedding_size, 4 * config.embedding_size)
+        self.gelu = nn.GELU()
+        self.fc2 = nn.Linear(4 * config.embedding_size, config.embedding_size)
+        self.dropout = nn.Dropout(config.dropout)
+
+    def forward(self, x: FloatTensor) -> FloatTensor:
+        out = self.fc1(x)
+        out = self.gelu(out)
+        out = self.fc2(out)
+        out = self.dropout(out)
         return out
 
 # input:    N, CONTEXT_SIZE, EMBEDDING_SIZE
