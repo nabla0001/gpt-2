@@ -31,20 +31,51 @@ class GPTConfig:
     vocab_size: int = 50304
     context_size: int = 1024
     embedding_size: int = 768
-    ffn_d: int = 3072
     n_heads: int = 12
-    dropout: float = 0.0
+    n_layers: int = 12
+    dropout: float = 0.1
 
 class GPT(nn.Module):
     def __init__(self, config: GPTConfig):
         super().__init__()
         self.config = config
-        self.token_embedding = nn.Embedding(config.vocab_size, config.embedding_size)
-        self.pos_embedding = nn.Embedding(config.context_size, config.embedding_size)
-        # self.transformer = nn.ModuleDict(dict())
+
+        transformer_modules = dict(
+            token_embedding=nn.Embedding(config.vocab_size, config.embedding_size),
+            pos_embedding=nn.Embedding(config.context_size, config.embedding_size),
+            embedding_dropout=nn.Dropout(config.dropout),
+            transformer_layers=nn.ModuleList([TransformerBlock(config) for _ in range(config.n_layers)]),
+            ln=nn.LayerNorm(config.embedding_size)
+        )
+        self.transformer = nn.ModuleDict(transformer_modules)
+        self.lm_head = nn.Linear(config.embedding_size, config.vocab_size, bias=False)
+        # tie weights between embedding and lm_head projection
+        self.transformer.token_embedding.weight = self.lm_head.weight
+
+        # TODO: init weights
 
     def forward(self, x: LongTensor) -> FloatTensor:
-        raise NotImplementedError
+        device = x.device
+        N, CONTEXT_SIZE = x.size()
+
+        # position encoding
+        pos = torch.arange(0, CONTEXT_SIZE, dtype=torch.long, device=device)
+
+        pos_embed = self.transformer.pos_embedding(pos) # CONTEXT_SIZE, EMBED_D
+        token_embed = self.transformer.token_embedding(x) # N, CONTEXT_SIZE, EMBED_D
+
+        out = pos_embed + token_embed
+        out = self.transformer.embedding_dropout(out)
+
+        for layer in self.transformer.transformer_layers:
+            out = layer(out)
+
+        out = self.transformer.ln(out)
+
+        # N, CONTEXT_SIZE, EMBED_D
+        logits = self.lm_head(out[:, -1, :]) # N, VOCAB_SIZE
+        return logits
+
 
 # input:    N, CONTEXT_SIZE, EMBEDDING_SIZE
 # output:   N, CONTEXT_SIZE, EMBEDDING_SIZE
