@@ -1,25 +1,3 @@
-"""
-
-GPT
-inputs: N, CONTEXT_SIZE
-output: N, VOCAB_SIZE
-
-Architecture
-  Embedding
-  PositionalEncoding
-  TransformerBlock
-      LayerNorm
-      SelfAttention
-      LayerNorm
-      FFN
-  (extra LayerNorm)
-  OutputHead
-
-TODO
-* test built-in scaled dot attention? https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html
-
-
-"""
 import torch
 import torch.nn as nn
 from attr import dataclass
@@ -29,7 +7,7 @@ import math
 @dataclass
 class GPTConfig:
     vocab_size: int = 50304
-    context_size: int = 1024
+    context_size: int = 512
     embedding_size: int = 768
     n_heads: int = 12
     n_layers: int = 12
@@ -52,7 +30,7 @@ class GPT(nn.Module):
         # tie weights between embedding and lm_head projection
         self.transformer.token_embedding.weight = self.lm_head.weight
 
-        # TODO: init weights
+        self.apply(self._init_weights)
 
     def forward(self, x: LongTensor) -> FloatTensor:
         device = x.device
@@ -76,6 +54,13 @@ class GPT(nn.Module):
         logits = self.lm_head(out[:, -1, :]) # N, VOCAB_SIZE
         return logits
 
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
 # input:    N, CONTEXT_SIZE, EMBEDDING_SIZE
 # output:   N, CONTEXT_SIZE, EMBEDDING_SIZE
