@@ -46,17 +46,17 @@ class GPT(nn.Module):
     def forward(self, x: LongTensor) -> FloatTensor:
         raise NotImplementedError
 
-
+# input:    N, CONTEXT_SIZE, EMBEDDING_SIZE
+# output:   N, CONTEXT_SIZE, EMBEDDING_SIZE
 class MultiheadSelfAttention(nn.Module):
     def __init__(self, config: GPTConfig):
         super().__init__()
-        self.config = config
         self.n_heads = config.n_heads
 
-        if self.config.embedding_size % config.n_heads != 0:
+        if config.embedding_size % config.n_heads != 0:
             raise ValueError(f'embedding_size [{config.embedding_size}] must be multiple of n_heads [{config.n_heads}]')
 
-        self.d_attn = self.config.embedding_size // config.n_heads
+        self.d_attn = config.embedding_size // config.n_heads
         self.scaled_dot_product_factor = 1. / math.sqrt(self.d_attn)
 
         # each head projects Q, K, V to Dx[D/H]
@@ -70,8 +70,6 @@ class MultiheadSelfAttention(nn.Module):
         self.out_dropout = nn.Dropout(config.dropout)
         self.out_linear = nn.Linear(config.embedding_size, config.embedding_size)
 
-    # input:    N, CONTEXT_SIZE, EMBEDDING_SIZE
-    # output:   N, CONTEXT_SIZE, EMBEDDING_SIZE
     def forward(self, x: FloatTensor) -> FloatTensor:
         N, T, D = x.size()  # N, CONTEXT_SIZE, EMBEDDING_SIZE
         q = self.query(x)   # N, CONTEXT_SIZE, EMBEDDING_SIZE
@@ -104,7 +102,6 @@ class FFN(nn.Module):
     """Position-wise Feedforward Network (FFN)"""
     def __init__(self, config: GPTConfig):
         super().__init__()
-        self.config = config
         self.fc1 = nn.Linear(config.embedding_size, 4 * config.embedding_size)
         self.gelu = nn.GELU()
         self.fc2 = nn.Linear(4 * config.embedding_size, config.embedding_size)
@@ -120,16 +117,18 @@ class FFN(nn.Module):
 # input:    N, CONTEXT_SIZE, EMBEDDING_SIZE
 # output:   N, CONTEXT_SIZE, EMBEDDING_SIZE
 class TransformerBlock(nn.Module):
+    """Pre-norm Transformer Block."""
     def __init__(self, config: GPTConfig):
         super().__init__()
+        self.config = config
         self.ln1 = nn.LayerNorm(config.embedding_size)
+        self.self_attn = MultiheadSelfAttention(config)
+        self.ffn = FFN(config)
+        self.ln2 = nn.LayerNorm(config.embedding_size)
 
-# test
-config = GPTConfig()
-attn = MultiheadSelfAttention(config)
-
-N = 10
-x = torch.rand(N, config.context_size, config.embedding_size)
-y = attn(x)
-print(y.shape)
-print(y.shape == (N, config.context_size, config.embedding_size))
+    def forward(self, x: FloatTensor) -> FloatTensor:
+        out = self.ln1(x)
+        out = self.self_attn(out)
+        out = out + x
+        out = out + self.ffn(self.ln2(out))
+        return out

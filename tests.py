@@ -1,6 +1,6 @@
 import pytest
 import torch
-from gpt import GPTConfig, MultiheadSelfAttention, FFN
+from gpt import GPTConfig, MultiheadSelfAttention, FFN, TransformerBlock
 
 @pytest.fixture
 def config():
@@ -59,6 +59,12 @@ def test_ffn(config):
     ffn = FFN(config)
     batch_input = torch.rand(10, config.context_size, config.embedding_size)
     output = ffn(batch_input)
+    assert output.shape == batch_input.shape
+
+def test_transformer_block(config):
+    transformer = TransformerBlock(config)
+    batch_input = torch.rand(10, config.context_size, config.embedding_size)
+    output = transformer(batch_input)
     assert output.shape == batch_input.shape
 
 @pytest.mark.skipif(not torch.cuda.is_available() and not torch.backends.mps.is_available(),
