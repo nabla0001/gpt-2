@@ -27,7 +27,6 @@ def test_self_attention_batch_independence():
     config = GPTConfig(context_size=context_size,
                        embedding_size=embedding_size,
                        n_heads=n_heads)
-
     attn = MultiheadSelfAttention(config)
 
     batch_input = torch.rand(n, config.context_size, config.embedding_size, requires_grad=True)
@@ -53,8 +52,8 @@ def test_self_attention_batch_independence():
         if sample_i == sample_idx:
             assert torch.all(grad == 0).item(), f'{sample_i} gradient is not 0\n{grad}'
         else:
-            assert not torch.all(grad == 0).item(), f'{sample_i} gradient is 0\n{grad}'
-
+            for token_grad in grad:
+                assert not torch.all(token_grad == 0).item(), f'{sample_i} gradient is 0\n{grad}'
 
 @pytest.mark.skipif(not torch.cuda.is_available() and not torch.backends.mps.is_available(),
                     reason='no gpu {cuda, mps} detected')

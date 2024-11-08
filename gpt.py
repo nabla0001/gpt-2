@@ -46,7 +46,7 @@ class GPT(nn.Module):
         raise NotImplementedError
 
 
-class CausalSelfAttention(nn.Module):
+class MultiheadSelfAttention(nn.Module):
     def __init__(self, config: GPTConfig):
         super().__init__()
         self.config = config
@@ -80,7 +80,9 @@ class CausalSelfAttention(nn.Module):
         attn = q @ k.transpose(-2, -1) # N, N_HEADS, CONTEXT_SIZE, CONTEXT_SIZE
         attn = attn / math.sqrt(D_ATTN)
         # mask out the future
-        attn = attn.masked_fill(attn == attn.triu(diagonal=1), float('-inf'))
+        future_mask = torch.triu(torch.ones_like(attn), diagonal=1).bool()
+        attn = attn.masked_fill(future_mask, float('-inf'))
+
         attn = nn.functional.softmax(attn, dim=-1)
         attn = self.attn_dropout(attn)
         # linear combination of v according to attention weights
@@ -99,7 +101,7 @@ class TransformerBlock(nn.Module):
 
 # test
 config = GPTConfig()
-attn = CausalSelfAttention(config)
+attn = MultiheadSelfAttention(config)
 
 N = 10
 x = torch.rand(N, config.context_size, config.embedding_size)
