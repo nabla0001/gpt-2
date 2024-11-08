@@ -7,9 +7,9 @@ import math
 @dataclass
 class GPTConfig:
     vocab_size: int = 50304
-    context_size: int = 512
-    embedding_size: int = 768
-    n_heads: int = 12
+    context_size: int = 256
+    embedding_size: int = 256
+    n_heads: int = 8
     n_layers: int = 12
     dropout: float = 0.1
 
@@ -51,7 +51,8 @@ class GPT(nn.Module):
         out = self.transformer.ln(out)
 
         # N, CONTEXT_SIZE, EMBED_D
-        logits = self.lm_head(out[:, -1, :]) # N, VOCAB_SIZE
+        # logits = self.lm_head(out[:, -1, :]) # N, VOCAB_SIZE
+        logits = self.lm_head(out) # N, CONTEXT_LENGTH, VOCAB_SIZE
         return logits
 
     def _init_weights(self, module):

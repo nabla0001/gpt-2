@@ -1,9 +1,8 @@
 import pytest
 import torch
-from xxhash import xxh32
 
 from gpt import GPTConfig, MultiheadSelfAttention, FFN, TransformerBlock, GPT
-
+from data import OpenWebTextData
 
 @pytest.fixture
 def config():
@@ -67,7 +66,7 @@ def test_gpt(config, n=10):
     gpt = GPT(config)
     x = torch.randint(0, config.vocab_size, size=(n, config.context_size))
     output = gpt(x)
-    assert output.shape == (n, config.vocab_size)
+    assert output.shape == (n, config.context_size, config.vocab_size)
 
 @pytest.mark.skipif(not torch.cuda.is_available() and not torch.backends.mps.is_available(),
                     reason='no gpu {cuda, mps} detected')
@@ -84,3 +83,16 @@ def test_gpt_on_gpu(config, n=10):
     gpt_gpu = gpt.to(device)
     x = x.to(device)
     output_gpu = gpt_gpu(x)
+
+def test_data():
+    data = OpenWebTextData('data')
+    x, y = data.get_batch('train', 4, 12)
+
+    assert x.shape == (4, 12)
+    assert y.shape == (4, 12)
+
+    assert x.dtype == torch.int64
+    assert y.dtype == torch.int64
+
+    # y is the next token of x
+    assert torch.equal(y[:, :-1], x[:, 1:])
