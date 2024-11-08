@@ -49,12 +49,14 @@ def test_self_attention_batch_independence(n=100):
             for token_grad in grad:
                 assert not torch.all(token_grad == 0).item(), f'{sample_i} gradient is 0\n{grad}'
 
+@torch.no_grad()
 def test_ffn(config, n=10):
     ffn = FFN(config)
     batch_input = torch.rand(n, config.context_size, config.embedding_size)
     output = ffn(batch_input)
     assert output.shape == batch_input.shape
 
+@torch.no_grad()
 def test_transformer_block(n=10):
     config = GPTConfig(context_size=64, embedding_size=32, n_heads=4)
     transformer = TransformerBlock(config)
@@ -62,12 +64,14 @@ def test_transformer_block(n=10):
     output = transformer(x)
     assert output.shape == x.shape
 
+@torch.no_grad()
 def test_gpt(config, n=10):
     gpt = GPT(config)
     x = torch.randint(0, config.vocab_size, size=(n, config.context_size))
     output = gpt(x)
     assert output.shape == (n, config.context_size, config.vocab_size)
 
+@torch.no_grad()
 @pytest.mark.skipif(not torch.cuda.is_available() and not torch.backends.mps.is_available(),
                     reason='no gpu {cuda, mps} detected')
 def test_gpt_on_gpu(config, n=10):
