@@ -10,7 +10,7 @@ class GPTConfig:
     context_size: int = 256
     embedding_size: int = 256
     n_heads: int = 8
-    n_layers: int = 12
+    n_layers: int = 8
     dropout: float = 0.1
 
 class GPT(nn.Module):

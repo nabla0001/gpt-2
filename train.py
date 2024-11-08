@@ -24,8 +24,7 @@ if __name__ == '__main__':
     exp_path.mkdir(exist_ok=True, parents=True)
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    experiment_path = exp_path / (timestamp + '.pkl')
-    checkpoint_path = exp_path / (timestamp + '.ckpt')
+    checkpoint_path = exp_path / (timestamp + '.ckpt.pt')
 
     print(f'experiment: {args.exp_name}')
     print(f'exp dir: {exp_path}')
@@ -43,8 +42,11 @@ if __name__ == '__main__':
     @dataclass
     class TrainingConfig:
         batch_size: int = 32
-        learning_rate: float = 0.01
-        num_updates: int = 10
+        learning_rate: float = 2.5e-3
+        # beta1: float = 0.9
+        # beta2: float = 0.95
+        num_updates: int = 50000
+        checkpoint_interval: int = 5000
 
     training_config = TrainingConfig()
 
@@ -54,6 +56,7 @@ if __name__ == '__main__':
     # model
     config = GPTConfig()
     model = GPT(config)
+    print(config)
 
     # resume training if specified
     if args.checkpoint is not None:
@@ -72,6 +75,9 @@ if __name__ == '__main__':
     # learning rate schedule
     # TODO
 
+    update_num = 0
+    losses = []
+
     for n_update in range(training_config.num_updates):
 
         input_tokens, targets = data.get_batch('train', training_config.batch_size, config.context_size)
@@ -89,4 +95,20 @@ if __name__ == '__main__':
         loss.backward()
         optimizer.step()
 
-        print(f'[iter {n_update:04f}/{training_config.num_updates}]\tloss: {loss.item():.2f}')
+        update_num += 1
+        losses.append(loss.item())
+
+        print(f'[iter {n_update:06d}/{training_config.num_updates:6d}]\tloss: {loss.item():.2f}')
+
+        # save checkpoint
+        if n_update % training_config.checkpoint_interval == 0:
+            checkpoint = {
+                'model': model.state_dict(),
+                'optimizer': optimizer.state_dict(),
+                'model_config': config,
+                'training_config': training_config,
+                'iter_num': update_num,
+                'loss': losses
+            }
+            print(f'saving checkpoint to {checkpoint_path}')
+            torch.save(checkpoint, checkpoint_path)
