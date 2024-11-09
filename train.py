@@ -1,15 +1,6 @@
-"""
-TODO
-0. clean logging
-1. checkpoint saving/resuming
-2. learning rate schedule
-3. evaluation
-4. wandb/tensorboard
-5. clean config
-"""
-
 import torch
 from torchinfo import summary
+from torch.utils.tensorboard import SummaryWriter
 
 from data import OpenWebTextData
 from gpt import GPT, GPTConfig
@@ -29,7 +20,8 @@ class TrainingConfig:
     # beta1: float = 0.9
     # beta2: float = 0.95
     n_batches: int = 10
-    checkpoint_interval: int = 2
+    log_interval: int = 1
+    checkpoint_interval: int = 100
 
 if __name__ == '__main__':
 
@@ -39,6 +31,7 @@ if __name__ == '__main__':
     parser.add_argument('--exp-name', type=str, required=True, help='short experiment name, used for subfolder')
     parser.add_argument('--exp-dir', type=str, default='experiments', help='root directory for experiments')
     parser.add_argument('--data-dir', type=str, default='data', help='directory for OpenWebText .bin files')
+    parser.add_argument('--log-dir', type=str, default='logs', help='Tensorboard log directory')
     args = parser.parse_args()
     print(args)
 
@@ -51,6 +44,11 @@ if __name__ == '__main__':
 
     print(f'experiment: {args.exp_name}')
     print(f'exp dir: {exp_path}')
+
+    # tensorboard
+    # Path(args.log_dir).mkdir(exist_ok=True)
+    log_dir = Path(args.log_dir) / args.exp_name
+    writer = SummaryWriter(log_dir)
 
     # device
     if torch.backends.mps.is_available():
@@ -106,8 +104,6 @@ if __name__ == '__main__':
     # learning rate schedule
     # TODO
 
-    losses = []
-
     for batch_num in range(start_batch, train_config.n_batches):
 
         input_tokens, targets = data.get_batch('train', train_config.batch_size, config.context_size)
@@ -125,14 +121,17 @@ if __name__ == '__main__':
         loss.backward()
         optimizer.step()
 
-        losses.append(loss.item())
-
-        print(f'[iter {batch_num:06d}/{train_config.n_batches-1:6d}]\tloss: {loss.item():.2f}')
+        if batch_num % train_config.log_interval == 0:
+            print(f'[iter {batch_num:06d}/{train_config.n_batches-1:6d}]\tloss: {loss.item():.2f}')
+            writer.add_scalar('loss', loss.item(), batch_num)
 
         # save checkpoint
-        if batch_num % train_config.checkpoint_interval == 0:
+        if batch_num % train_config.checkpoint_interval == 0 and batch_num > 0:
             print(f'saving checkpoint to {checkpoint_path}')
             kwargs = dict(model_args=model_args,
                           train_config=train_config,
                           batch_num=batch_num)
             save_checkpoint(checkpoint_path, model, optimizer, **kwargs)
+
+    writer.flush()
+    writer.close()
