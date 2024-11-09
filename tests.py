@@ -1,6 +1,5 @@
 import pytest
 import torch
-from jupyterlab_server.config import load_config
 
 from gpt import GPTConfig, MultiheadSelfAttention, FFN, TransformerBlock, GPT
 from data import OpenWebTextData
