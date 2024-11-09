@@ -8,7 +8,8 @@ from utils import save_checkpoint, load_checkpoint
 
 import argparse
 from attr import dataclass
-from datetime import datetime
+import time
+import datetime
 from pathlib import Path
 
 
@@ -39,7 +40,7 @@ if __name__ == '__main__':
     exp_path = Path(args.exp_dir) / args.exp_name
     exp_path.mkdir(exist_ok=True, parents=True)
 
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
     checkpoint_path = exp_path / (timestamp + '.ckpt.pt')
 
     print(f'experiment: {args.exp_name}')
@@ -102,9 +103,31 @@ if __name__ == '__main__':
     optimizer = torch.optim.Adam(model.parameters(), lr=train_config.learning_rate)
 
     # learning rate schedule
-    # TODO
+    def get_lr(it):
+        import math
+        warmup_iters = 2000
+        lr_decay_iters = train_config.n_batches
+        min_lr = 6e-5
+        # 1) linear warmup for warmup_iters steps
+        if it < warmup_iters:
+            return train_config.learning_rate * it / warmup_iters
+        # 2) if it > lr_decay_iters, return min learning rate
+        if it > lr_decay_iters:
+            return min_lr
+        # 3) in between, use cosine decay down to min learning rate
+        decay_ratio = (it - warmup_iters) / (lr_decay_iters - warmup_iters)
+        assert 0 <= decay_ratio <= 1
+        coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))  # coeff ranges 0..1
+        return min_lr + coeff * (train_config.learning_rate - min_lr)
+
+    start_time = time.time()
 
     for batch_num in range(start_batch, train_config.n_batches):
+
+        # update learning rate
+        lr = get_lr(batch_num)
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = lr
 
         input_tokens, targets = data.get_batch('train', train_config.batch_size, config.context_size)
         input_tokens = input_tokens.to(device)
@@ -117,13 +140,24 @@ if __name__ == '__main__':
 
         loss = torch.nn.functional.cross_entropy(logits, targets, ignore_index=-1)
 
+        prepare_time = time.time() - start_time
+
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
+        process_time = time.time() - prepare_time - start_time
+        start_time = time.time()
+
         if batch_num % train_config.log_interval == 0:
-            print(f'[iter {batch_num:06d}/{train_config.n_batches-1:6d}]\tloss: {loss.item():.2f}')
+            compute_efficiency = process_time/(process_time+prepare_time)
+            print(f'[iter {batch_num:06d}/{train_config.n_batches-1:06d}]\tloss: {loss.item():<.2f}\t'
+                  f'compute efficiency {compute_efficiency:.2f}\tprep time {prepare_time:.2f}s\tprocess time {process_time:.2f}s')
             writer.add_scalar('loss', loss.item(), batch_num)
+            writer.add_scalar(f'learning rate', optimizer.param_groups[0]['lr'], batch_num) if len(optimizer.param_groups) == 1 else None
+            writer.add_scalar('compute efficiency', compute_efficiency, batch_num)
+            writer.add_scalar('prep time', prepare_time, batch_num)
+            writer.add_scalar('process time', process_time, batch_num)
 
         # save checkpoint
         if batch_num % train_config.checkpoint_interval == 0 and batch_num > 0:
@@ -132,6 +166,9 @@ if __name__ == '__main__':
                           train_config=train_config,
                           batch_num=batch_num)
             save_checkpoint(checkpoint_path, model, optimizer, **kwargs)
+
+    # clean up
+    del data
 
     writer.flush()
     writer.close()
