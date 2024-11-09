@@ -1,21 +1,44 @@
+"""
+TODO
+0. clean logging
+1. checkpoint saving/resuming
+2. learning rate schedule
+3. evaluation
+4. wandb/tensorboard
+5. clean config
+"""
+
 import torch
 from torchinfo import summary
 
 from data import OpenWebTextData
 from gpt import GPT, GPTConfig
+from utils import save_checkpoint, load_checkpoint
 
 import argparse
 from attr import dataclass
 from datetime import datetime
 from pathlib import Path
 
+
+# hyperparameters
+@dataclass
+class TrainingConfig:
+    batch_size: int = 32
+    learning_rate: float = 2.5e-3
+    # beta1: float = 0.9
+    # beta2: float = 0.95
+    n_batches: int = 10
+    checkpoint_interval: int = 2
+
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='trains GPT-1 on OpenWebText')
-    parser.add_argument('--checkpoint', type=str, default=None)
-    parser.add_argument('--exp-name', type=str, required=True)
-    parser.add_argument('--exp-dir', type=str, default='experiments')
-    parser.add_argument('--data-dir', type=str, default='data')
+    parser.add_argument('--resume', action='store_true', help='resume from checkpoint')
+    parser.add_argument('--checkpoint', type=str, help='path to .ckpt')
+    parser.add_argument('--exp-name', type=str, required=True, help='short experiment name, used for subfolder')
+    parser.add_argument('--exp-dir', type=str, default='experiments', help='root directory for experiments')
+    parser.add_argument('--data-dir', type=str, default='data', help='directory for OpenWebText .bin files')
     args = parser.parse_args()
     print(args)
 
@@ -38,49 +61,56 @@ if __name__ == '__main__':
         device = torch.device('cpu')
     print(f'device: {device}')
 
-    # hyperparameters
-    @dataclass
-    class TrainingConfig:
-        batch_size: int = 32
-        learning_rate: float = 2.5e-3
-        # beta1: float = 0.9
-        # beta2: float = 0.95
-        num_updates: int = 50000
-        checkpoint_interval: int = 5000
-
-    training_config = TrainingConfig()
-
     # data
     data = OpenWebTextData(args.data_dir)
 
     # model
-    config = GPTConfig()
-    model = GPT(config)
-    print(config)
 
     # resume training if specified
-    if args.checkpoint is not None:
-        # TODO
-        model.train()
-        print(f'Resuming training from checkpoint {args.checkpoint}')
+    if args.resume:
+        print(f'resuming training from checkpoint {args.checkpoint}')
+        checkpoint = load_checkpoint(args.checkpoint, device=device)
 
-    input_data = torch.randint(0, config.vocab_size, size=(training_config.batch_size, config.context_size))
-    print(summary(model, input_data=input_data))
+        model_args = checkpoint.get('model_args')
+        config = GPTConfig(**model_args)
+
+        model = GPT(config)
+        state_dict = checkpoint.get('model')
+        model.load_state_dict(state_dict)
+
+        start_batch = checkpoint.get('batch_num')
+    else:
+        print(f'training model from scratch')
+        model_args = dict() # TODO get from command line or config
+        config = GPTConfig(**model_args)
+        model = GPT(config)
+
+        start_batch = 0
+
     model.to(device)
+    model.train()
 
-    # loss & optimiser
-    objective = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=training_config.learning_rate)
+    # hyperparameters
+    train_config = TrainingConfig()
+    print(train_config)
+
+    # print model summary
+    input_data = torch.randint(0, config.vocab_size,
+                               size=(train_config.batch_size, config.context_size),
+                               device=device)
+    print(summary(model, input_data=input_data))
+
+    # optimiser
+    optimizer = torch.optim.Adam(model.parameters(), lr=train_config.learning_rate)
 
     # learning rate schedule
     # TODO
 
-    update_num = 0
     losses = []
 
-    for n_update in range(training_config.num_updates):
+    for batch_num in range(start_batch, train_config.n_batches):
 
-        input_tokens, targets = data.get_batch('train', training_config.batch_size, config.context_size)
+        input_tokens, targets = data.get_batch('train', train_config.batch_size, config.context_size)
         input_tokens = input_tokens.to(device)
         targets = targets.to(device)
 
@@ -95,20 +125,14 @@ if __name__ == '__main__':
         loss.backward()
         optimizer.step()
 
-        update_num += 1
         losses.append(loss.item())
 
-        print(f'[iter {n_update:06d}/{training_config.num_updates:6d}]\tloss: {loss.item():.2f}')
+        print(f'[iter {batch_num:06d}/{train_config.n_batches-1:6d}]\tloss: {loss.item():.2f}')
 
         # save checkpoint
-        if n_update % training_config.checkpoint_interval == 0:
-            checkpoint = {
-                'model': model.state_dict(),
-                'optimizer': optimizer.state_dict(),
-                'model_config': config,
-                'training_config': training_config,
-                'iter_num': update_num,
-                'loss': losses
-            }
+        if batch_num % train_config.checkpoint_interval == 0:
             print(f'saving checkpoint to {checkpoint_path}')
-            torch.save(checkpoint, checkpoint_path)
+            kwargs = dict(model_args=model_args,
+                          train_config=train_config,
+                          batch_num=batch_num)
+            save_checkpoint(checkpoint_path, model, optimizer, **kwargs)
