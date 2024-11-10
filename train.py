@@ -5,15 +5,12 @@ from torch.utils.tensorboard import SummaryWriter
 from data import OpenWebTextData
 from gpt import GPT
 from config import Config, GPTConfig
-from utils import save_checkpoint, load_checkpoint, get_learning_rate
+from utils import save_checkpoint, load_checkpoint, get_learning_rate, evaluate_loss
 
 import argparse
 import time
 import datetime
 from pathlib import Path
-
-
-# hyperparameters
 
 
 if __name__ == '__main__':
@@ -78,6 +75,7 @@ if __name__ == '__main__':
         print(optimizer)
 
         start_batch = checkpoint.get('batch_num')
+        best_val_loss = checkpoint.get('best_val_loss')
         checkpoint = None
     else:
         print(f'training model from scratch')
@@ -91,6 +89,7 @@ if __name__ == '__main__':
         optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
 
         start_batch = 0
+        best_val_loss = float('inf')
 
     model.train()
     print(config)
@@ -130,7 +129,7 @@ if __name__ == '__main__':
             print(f'[iter {batch_num:06d}/{config.n_batches-1:06d}]\tloss: {loss.item():<.2f}\t'
                   f'compute efficiency {compute_efficiency:.2f}\tprep time {prepare_time:.2f}s\tprocess time {process_time:.2f}s'
                   f'\ttotal batch time: {process_time+prepare_time:.2f}s')
-            writer.add_scalar('loss', loss.item(), batch_num)
+            writer.add_scalar('loss/batch', loss.item(), batch_num)
             writer.add_scalar(f'learning rate', optimizer.param_groups[0]['lr'], batch_num) if len(optimizer.param_groups) == 1 else None
             writer.add_scalar('compute efficiency [%]', compute_efficiency, batch_num)
             writer.add_scalar('prep time [s]', prepare_time, batch_num)
@@ -138,16 +137,23 @@ if __name__ == '__main__':
             writer.add_scalar('total batch time [s]', process_time+prepare_time, batch_num)
 
         # evaluate test loss
-        # if batch_num % config.eval_interval == 0 and batch_num > 0:
-        #     with torch.no_grad():
-        #         val_loss, train_loss = evaluate_loss()
+        if batch_num % config.eval_interval == 0 and batch_num > 0:
+            losses = evaluate_loss(model, data, device,
+                                   n_batches=config.n_eval_batches,
+                                   batch_size=config.batch_size,
+                                   seq_len=config.gpt.context_size)
+            writer.add_scalars('loss', losses, batch_num)
+
+            if losses['test'] < best_val_loss:
+                best_val_loss = losses['test']
 
         # save checkpoint
         if batch_num % config.checkpoint_interval == 0 and batch_num > 0:
             print(f'saving checkpoint to {checkpoint_path}')
             kwargs = dict(config=config,
                           optimizer_class=optimizer.__class__,
-                          batch_num=batch_num)
+                          batch_num=batch_num,
+                          best_val_loss=best_val_loss)
             save_checkpoint(checkpoint_path, model, optimizer, **kwargs)
 
     # clean up

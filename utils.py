@@ -11,7 +11,7 @@ def evaluate_loss(model: torch.nn.Module,
                   device: torch.device,
                   n_batches: int,
                   batch_size: int,
-                  seq_len: int) -> dict[str, torch.Tensor]:
+                  seq_len: int) -> dict[str, float]:
     model.eval()
     out = {}
 
@@ -24,7 +24,7 @@ def evaluate_loss(model: torch.nn.Module,
 
             _, loss = model(input_tokens, targets)
             losses[batch_num] = loss.item()
-        out[split] = losses.mean()
+        out[split] = float(losses.mean())
     model.train()
     return out
 

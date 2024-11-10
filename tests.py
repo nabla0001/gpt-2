@@ -126,8 +126,8 @@ def test_evaluate_loss(config):
 
     assert type(losses) == dict
     assert 'train' in losses and 'test' in losses
-    assert type(losses['train']) == torch.Tensor
-    assert type(losses['test']) == torch.Tensor
+    assert type(losses['train']) == float
+    assert type(losses['test']) == float
 
 
 @pytest.mark.skipif(not torch.cuda.is_available() and not torch.backends.mps.is_available(),
