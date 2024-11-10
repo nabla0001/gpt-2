@@ -3,7 +3,7 @@ import torch
 
 from gpt import GPTConfig, MultiheadSelfAttention, FFN, TransformerBlock, GPT
 from data import OpenWebTextData
-from utils import save_checkpoint, load_checkpoint
+from utils import save_checkpoint, load_checkpoint, evaluate_loss
 
 @pytest.fixture
 def config():
@@ -111,6 +111,24 @@ def test_data():
 
     # y is the next token of x
     assert torch.equal(y[:, :-1], x[:, 1:])
+
+
+@torch.no_grad
+def test_evaluate_loss(config):
+    device = torch.device('cpu')
+
+    data = OpenWebTextData('data')
+
+    config = GPTConfig(vocab_size=50304, context_size=32, embedding_size=32, n_heads=2)
+    gpt = GPT(config)
+
+    losses = evaluate_loss(gpt, data, device, batch_size=2, n_batches=2, seq_len=config.context_size)
+
+    assert type(losses) == dict
+    assert 'train' in losses and 'test' in losses
+    assert type(losses['train']) == torch.Tensor
+    assert type(losses['test']) == torch.Tensor
+
 
 @pytest.mark.skipif(not torch.cuda.is_available() and not torch.backends.mps.is_available(),
                     reason='no gpu {cuda, mps} detected')

@@ -1,6 +1,33 @@
 import torch
-from pathlib import Path
 from config import Config
+from data import OpenWebTextData
+from pathlib import Path
+from tqdm import tqdm
+
+
+@torch.no_grad()
+def evaluate_loss(model: torch.nn.Module,
+                  data: OpenWebTextData,
+                  device: torch.device,
+                  n_batches: int,
+                  batch_size: int,
+                  seq_len: int) -> dict[str, torch.Tensor]:
+    model.eval()
+    out = {}
+
+    for split in ['train', 'test']:
+        losses = torch.empty(n_batches)
+        for batch_num in tqdm(range(n_batches), total=n_batches, desc=f'Evaluating {split}'):
+            input_tokens, targets = data.get_batch(split, batch_size, seq_len)
+            input_tokens = input_tokens.to(device)
+            targets = targets.to(device)
+
+            _, loss = model(input_tokens, targets)
+            losses[batch_num] = loss.item()
+        out[split] = losses.mean()
+    model.train()
+    return out
+
 
 def save_checkpoint(path: str | Path,
                     model: torch.nn.Module,
