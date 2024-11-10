@@ -98,15 +98,13 @@ if __name__ == '__main__':
     # gradient scaler for mixed precision
     mixed_precision = config.dtype == torch.float16
     print(f'training with mixed precision: {mixed_precision} dtype={config.dtype}')
-    grad_scaler = torch.cuda.amp.GradScaler(enabled=mixed_precision)
+    # requires running train.py with PYTORCH_ENABLE_MPS_FALLBACK=1 for MPS since some ops are not implemented yet :(
+    grad_scaler = torch.amp.GradScaler(device=device, enabled=mixed_precision)
 
-    # does not work with device='mps', torch.cuda.amp.GradScaler().state_dict() returns empty dict
-    # clean way seems to be to switch to torch.amp.GradScaler, but that threw errors
-    # if grad_scaler_state_dict is not None:
-    #     print(f'found grad scaler object. loading its state dict.')
-    #     print(grad_scaler_state_dict)
-    #     grad_scaler.load_state_dict(grad_scaler_state_dict)
-    #     print(grad_scaler.state_dict())
+    if grad_scaler_state_dict is not None:
+        print(f'found grad scaler object. loading its state dict.')
+        print(grad_scaler_state_dict)
+        grad_scaler.load_state_dict(grad_scaler_state_dict)
 
     model.train()
     print(config)
