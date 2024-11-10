@@ -116,11 +116,6 @@ if __name__ == '__main__':
 
         _, loss = model(input_tokens, targets)
 
-        # targets = targets.view(-1) # N*CONTEXT_SIZE,
-        # logits = logits.view(-1, logits.size(-1)) # N*CONTEXT_SIZE, VOCAB_SIZE
-        #
-        # loss = torch.nn.functional.cross_entropy(logits, targets, ignore_index=-1)
-
         prepare_time = time.time() - start_time
 
         optimizer.zero_grad()
