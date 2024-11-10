@@ -36,7 +36,6 @@ if __name__ == '__main__':
     print(f'exp dir: {exp_path}')
 
     # tensorboard
-    # Path(args.log_dir).mkdir(exist_ok=True)
     log_dir = Path(args.log_dir) / args.exp_name
     writer = SummaryWriter(log_dir)
 
@@ -68,14 +67,18 @@ if __name__ == '__main__':
         state_dict = checkpoint.get('model')
         model.load_state_dict(state_dict)
 
-        # TODO: load optimizer
         optimizer = checkpoint.get('optimizer_class')
         optimizer = optimizer(model.parameters(), lr=config.learning_rate)
         optimizer.load_state_dict(checkpoint['optimizer'])
+        print(f'reloading optimizer')
         print(optimizer)
 
         start_batch = checkpoint.get('batch_num')
         best_val_loss = checkpoint.get('best_val_loss')
+
+        # to restore gradient scaler state for mixed precision
+        grad_scaler_state_dict = checkpoint.get('grad_scaler')
+
         checkpoint = None
     else:
         print(f'training model from scratch')
@@ -90,6 +93,20 @@ if __name__ == '__main__':
 
         start_batch = 0
         best_val_loss = float('inf')
+        grad_scaler_state_dict = None
+
+    # gradient scaler for mixed precision
+    mixed_precision = config.dtype == torch.float16
+    print(f'training with mixed precision: {mixed_precision} dtype={config.dtype}')
+    grad_scaler = torch.cuda.amp.GradScaler(enabled=mixed_precision)
+
+    # does not work with device='mps', torch.cuda.amp.GradScaler().state_dict() returns empty dict
+    # clean way seems to be to switch to torch.amp.GradScaler, but that threw errors
+    # if grad_scaler_state_dict is not None:
+    #     print(f'found grad scaler object. loading its state dict.')
+    #     print(grad_scaler_state_dict)
+    #     grad_scaler.load_state_dict(grad_scaler_state_dict)
+    #     print(grad_scaler.state_dict())
 
     model.train()
     print(config)
@@ -113,13 +130,16 @@ if __name__ == '__main__':
         input_tokens = input_tokens.to(device)
         targets = targets.to(device)
 
-        _, loss = model(input_tokens, targets)
+        with torch.amp.autocast(device_type=config.device, dtype=config.dtype):
+            _, loss = model(input_tokens, targets)
 
         prepare_time = time.time() - start_time
 
         optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        grad_scaler.scale(loss).backward()
+        grad_scaler.step(optimizer)
+
+        grad_scaler.update()
 
         process_time = time.time() - prepare_time - start_time
         start_time = time.time()
@@ -142,19 +162,29 @@ if __name__ == '__main__':
                                    n_batches=config.n_eval_batches,
                                    batch_size=config.batch_size,
                                    seq_len=config.gpt.context_size)
+            print(f"Losses\ttrain: {losses['train']:.2f}\ttest: {losses['test']:.2f}")
             writer.add_scalars('loss', losses, batch_num)
+            writer.flush()
 
             if losses['test'] < best_val_loss:
                 best_val_loss = losses['test']
+                kwargs = dict(config=config,
+                              optimizer_class=optimizer.__class__,
+                              grad_scaler=grad_scaler.state_dict(),
+                              batch_num=batch_num,
+                              best_val_loss=best_val_loss)
+                save_checkpoint(checkpoint_path, model, optimizer, **kwargs)
+                print(f'saved checkpoint to {checkpoint_path}')
 
         # save checkpoint
         if batch_num % config.checkpoint_interval == 0 and batch_num > 0:
-            print(f'saving checkpoint to {checkpoint_path}')
             kwargs = dict(config=config,
                           optimizer_class=optimizer.__class__,
+                          grad_scaler=grad_scaler.state_dict(),
                           batch_num=batch_num,
                           best_val_loss=best_val_loss)
             save_checkpoint(checkpoint_path, model, optimizer, **kwargs)
+            print(f'saved checkpoint to {checkpoint_path}')
 
     # clean up
     del data
