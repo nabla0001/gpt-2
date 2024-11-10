@@ -76,7 +76,7 @@ if __name__ == '__main__':
         start_batch = checkpoint.get('batch_num')
         best_val_loss = checkpoint.get('best_val_loss')
 
-        # to restore gradient scaler state for mixed precision
+        # gradient scaler state for mixed precision
         grad_scaler_state_dict = checkpoint.get('grad_scaler')
 
         checkpoint = None
@@ -145,7 +145,6 @@ if __name__ == '__main__':
             optimizer.zero_grad(set_to_none=True)
 
         process_time = time.time() - prepare_time - start_time # forward+backward processing time
-        start_time = time.time()
 
         if batch_num % config.log_interval == 0:
             compute_efficiency = process_time/(process_time+prepare_time)
@@ -189,6 +188,8 @@ if __name__ == '__main__':
                           best_val_loss=best_val_loss)
             save_checkpoint(checkpoint_path, model, optimizer, **kwargs)
             print(f'saved checkpoint to {checkpoint_path}')
+
+        start_time = time.time()
 
     # clean up
     del data
