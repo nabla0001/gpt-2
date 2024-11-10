@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch import LongTensor, FloatTensor
 from config import GPTConfig
+from typing import Optional
 import math
 
 class GPT(nn.Module):
@@ -23,7 +24,7 @@ class GPT(nn.Module):
 
         self.apply(self._init_weights)
 
-    def forward(self, x: LongTensor) -> FloatTensor:
+    def forward(self, x: LongTensor, targets: torch.LongTensor = None) -> tuple[FloatTensor, Optional[float]]:
         device = x.device
         N, CONTEXT_SIZE = x.size()
 
@@ -43,8 +44,15 @@ class GPT(nn.Module):
 
         # N, CONTEXT_SIZE, EMBED_D
         # logits = self.lm_head(out[:, -1, :]) # N, VOCAB_SIZE
+        loss = None
         logits = self.lm_head(out) # N, CONTEXT_LENGTH, VOCAB_SIZE
-        return logits
+
+        if targets is not None:
+            targets = targets.view(-1)  # N*CONTEXT_SIZE,
+            logits_reshaped = logits.view(-1, logits.size(-1))  # N*CONTEXT_SIZE, VOCAB_SIZE
+            loss = torch.nn.functional.cross_entropy(logits_reshaped, targets, ignore_index=-1)
+
+        return logits, loss
 
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):

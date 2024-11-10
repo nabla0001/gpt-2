@@ -114,12 +114,12 @@ if __name__ == '__main__':
         input_tokens = input_tokens.to(device)
         targets = targets.to(device)
 
-        logits = model(input_tokens)
+        _, loss = model(input_tokens, targets)
 
-        targets = targets.view(-1) # N*CONTEXT_SIZE,
-        logits = logits.view(-1, logits.size(-1)) # N*CONTEXT_SIZE, VOCAB_SIZE
-
-        loss = torch.nn.functional.cross_entropy(logits, targets, ignore_index=-1)
+        # targets = targets.view(-1) # N*CONTEXT_SIZE,
+        # logits = logits.view(-1, logits.size(-1)) # N*CONTEXT_SIZE, VOCAB_SIZE
+        #
+        # loss = torch.nn.functional.cross_entropy(logits, targets, ignore_index=-1)
 
         prepare_time = time.time() - start_time
 
@@ -141,6 +141,11 @@ if __name__ == '__main__':
             writer.add_scalar('prep time [s]', prepare_time, batch_num)
             writer.add_scalar('process time [s]', process_time, batch_num)
             writer.add_scalar('total batch time [s]', process_time+prepare_time, batch_num)
+
+        # evaluate test loss
+        # if batch_num % config.eval_interval == 0 and batch_num > 0:
+        #     with torch.no_grad():
+        #         val_loss, train_loss = evaluate_loss()
 
         # save checkpoint
         if batch_num % config.checkpoint_interval == 0 and batch_num > 0:

@@ -69,8 +69,18 @@ def test_transformer_block(n=10):
 def test_gpt(config, n=10):
     gpt = GPT(config)
     x = torch.randint(0, config.vocab_size, size=(n, config.context_size))
-    output = gpt(x)
+    output, _ = gpt(x)
     assert output.shape == (n, config.context_size, config.vocab_size)
+
+@torch.no_grad()
+def test_gpt_loss_with_targets(config, n=10):
+    gpt = GPT(config)
+    x = torch.randint(0, config.vocab_size, size=(n, config.context_size))
+    targets = torch.randint(0, config.vocab_size, size=(n, config.context_size))
+    output, loss = gpt(x, targets)
+
+    assert output.shape == (n, config.context_size, config.vocab_size)
+    assert type(loss) == torch.Tensor
 
 @torch.no_grad()
 @pytest.mark.skipif(not torch.cuda.is_available() and not torch.backends.mps.is_available(),
@@ -82,12 +92,12 @@ def test_gpt_on_gpu(config, n=10):
 
     gpt = GPT(config)
     gpt.eval()
-    output = gpt(x)
+    output, _ = gpt(x)
 
     device = torch.device('mps') if torch.backends.mps.is_available() else torch.device('cuda')
     gpt_gpu = gpt.to(device)
     x = x.to(device)
-    output_gpu = gpt_gpu(x)
+    output_gpu, _ = gpt_gpu(x)
 
 def test_data():
     data = OpenWebTextData('data')
@@ -121,7 +131,7 @@ def test_checkpointing(n=10):
 
     x = torch.randint(0, config.vocab_size, size=(n, config.context_size))
     x = x.to(device)
-    output = gpt(x)
+    output, _ = gpt(x)
 
     tmp_dir = pathlib.Path('temp')
     tmp_dir.mkdir(exist_ok=True)
@@ -149,7 +159,7 @@ def test_checkpointing(n=10):
     gpt_loaded.to(device)
     gpt_loaded.eval()
 
-    output_loaded = gpt_loaded(x)
+    output_loaded, _ = gpt_loaded(x)
     assert torch.allclose(output, output_loaded)
 
     # check model is on GPU
