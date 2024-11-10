@@ -117,6 +117,7 @@ if __name__ == '__main__':
 
     start_time = time.time()
 
+    optimizer.zero_grad(set_to_none=True)
     for batch_num in range(start_batch, config.n_batches):
 
         # update learning rate
@@ -128,26 +129,31 @@ if __name__ == '__main__':
         input_tokens = input_tokens.to(device)
         targets = targets.to(device)
 
+        prepare_time = time.time() - start_time # data processing time
+
         with torch.amp.autocast(device_type=config.device, dtype=config.dtype):
             _, loss = model(input_tokens, targets)
+            loss = loss / config.gradient_accumulation_steps # divide to account for gradient accumulation
 
-        prepare_time = time.time() - start_time
-
-        optimizer.zero_grad()
+        # accumulate gradients
         grad_scaler.scale(loss).backward()
-        grad_scaler.step(optimizer)
 
-        grad_scaler.update()
+        # parameter update every [gradient_accumulation_steps] steps
+        if (batch_num+1) % config.gradient_accumulation_steps == 0:
+            grad_scaler.step(optimizer)
+            grad_scaler.update()
+            optimizer.zero_grad(set_to_none=True)
 
-        process_time = time.time() - prepare_time - start_time
+        process_time = time.time() - prepare_time - start_time # forward+backward processing time
         start_time = time.time()
 
         if batch_num % config.log_interval == 0:
             compute_efficiency = process_time/(process_time+prepare_time)
-            print(f'[iter {batch_num:06d}/{config.n_batches-1:06d}]\tloss: {loss.item():<.2f}\t'
+            loss_m = loss.item() * config.gradient_accumulation_steps # re-scale after division above
+            print(f'[iter {batch_num:06d}/{config.n_batches-1:06d}]\tloss: {loss_m:<.2f}\t'
                   f'compute efficiency {compute_efficiency:.2f}\tprep time {prepare_time:.2f}s\tprocess time {process_time:.2f}s'
                   f'\ttotal batch time: {process_time+prepare_time:.2f}s')
-            writer.add_scalar('loss/batch', loss.item(), batch_num)
+            writer.add_scalar('loss/batch', loss_m, batch_num)
             writer.add_scalar(f'learning rate', optimizer.param_groups[0]['lr'], batch_num) if len(optimizer.param_groups) == 1 else None
             writer.add_scalar('compute efficiency [%]', compute_efficiency, batch_num)
             writer.add_scalar('prep time [s]', prepare_time, batch_num)
