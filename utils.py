@@ -17,7 +17,7 @@ def evaluate_loss(model: torch.nn.Module,
 
     for split in ['train', 'test']:
         losses = torch.empty(n_batches)
-        for batch_num in tqdm(range(n_batches), total=n_batches, desc=f'Evaluating {split}'):
+        for batch_num in range(n_batches):
             input_tokens, targets = data.get_batch(split, batch_size, seq_len)
             input_tokens = input_tokens.to(device)
             targets = targets.to(device)

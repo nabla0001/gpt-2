@@ -10,7 +10,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from data import OpenWebTextData
 from gpt import GPT
-from config import Config
+from config import Config, GPTConfig
 from utils import save_checkpoint, load_checkpoint, get_learning_rate, evaluate_loss
 
 
@@ -58,7 +58,9 @@ def train(args: argparse.Namespace) -> None:
         log.info('resuming training from checkpoint', checkpoint=args.checkpoint)
         checkpoint = load_checkpoint(args.checkpoint, device=device)
 
-        config = checkpoint.get('config')
+        config_args = checkpoint.get('config')
+        config = Config(**config_args)
+        config.gpt = GPTConfig(**config.gpt)
 
         # load model
         model = GPT(config.gpt)
@@ -168,7 +170,7 @@ def train(args: argparse.Namespace) -> None:
                                    n_batches=config.n_eval_batches,
                                    batch_size=config.batch_size,
                                    seq_len=config.gpt.context_size)
-            log.info(f'batch [{batch_num:07d}/{config.n_batches:07d}]',
+            log.info(f'batch [{batch_num:07d}/{config.n_batches:07d}] evaluation',
                      train_loss=f'{losses['train']:.2f}',
                      test_loss=f'{losses['test']:.2f}',
                      n=config.n_eval_batches*config.batch_size)
@@ -177,7 +179,7 @@ def train(args: argparse.Namespace) -> None:
 
             if losses['test'] < best_val_loss:
                 best_val_loss = losses['test']
-                kwargs = dict(config=config,
+                kwargs = dict(config=asdict(config),
                               optimizer_class=optimizer.__class__,
                               grad_scaler=grad_scaler.state_dict(),
                               batch_num=batch_num,
