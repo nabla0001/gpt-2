@@ -21,8 +21,7 @@ class Config:
     min_lr = 6e-5
     # beta1: float = 0.9
     # beta2: float = 0.95
-    n_batches: int = 60000
+    n_batches: int = 3 # 60000
     log_interval: int = 20
-    checkpoint_interval: int = 5000
     eval_interval: int = 100
     n_eval_batches: int = 100

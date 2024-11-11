@@ -2,6 +2,7 @@ import argparse
 import time
 from pathlib import Path
 import structlog
+from attr import asdict
 
 import torch
 from torchinfo import summary
@@ -100,19 +101,19 @@ def train(args: argparse.Namespace) -> None:
     grad_scaler = torch.amp.GradScaler(device=device.type, enabled=mixed_precision)
 
     if grad_scaler_state_dict is not None:
-        log.info('found grad scaler in checkpoint', grad_scaler_state=grad_scaler_state_dict)
+        log.info('found grad scaler in checkpoint', **grad_scaler_state_dict)
         grad_scaler.load_state_dict(grad_scaler_state_dict)
-        log.info('grad scaler state after re-loading its state', grad_scaler_state=grad_scaler.state_dict())
+        log.info('grad scaler state after re-loading its state', **grad_scaler.state_dict())
 
     model.train()
-    log.info('experiment config', config=config)
+    log.info('experiment config', **asdict(config))
 
     # print model summary
     input_data = torch.randint(0, config.gpt.vocab_size,
                                size=(config.batch_size, config.gpt.context_size),
                                device=device)
-    # print(summary(model, input_data=input_data))
-    log.info('model summary', model_summary=summary(model, input_data=input_data))
+    log.info('model summary')
+    log.info(summary(model, input_data=input_data))
 
     start_time = time.time()
 
