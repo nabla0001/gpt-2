@@ -13,7 +13,6 @@ class GPTConfig:
 @dataclass
 class Config:
     gpt: GPTConfig = GPTConfig()
-    device: str = 'mps'
     dtype: torch.dtype = torch.float16 # 'torch.float16' for mixed precision
     gradient_accumulation_steps: int = 8
     batch_size: int = 8

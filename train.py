@@ -1,29 +1,27 @@
+import argparse
+import time
+import datetime
+from pathlib import Path
+
 import torch
 from torchinfo import summary
 from torch.utils.tensorboard import SummaryWriter
 
 from data import OpenWebTextData
 from gpt import GPT
-from config import Config, GPTConfig
+from config import Config
 from utils import save_checkpoint, load_checkpoint, get_learning_rate, evaluate_loss
 
-import argparse
-import time
-import datetime
-from pathlib import Path
+def train(args: argparse.Namespace) -> None:
+    """model/training configuration is defined in config.py
 
-
-if __name__ == '__main__':
-
-    parser = argparse.ArgumentParser(description='trains GPT-1 on OpenWebText')
-    parser.add_argument('--resume', action='store_true', help='resume from checkpoint')
-    parser.add_argument('--checkpoint', type=str, help='path to .ckpt')
-    parser.add_argument('--exp-name', type=str, required=True, help='short experiment name, used for subfolder')
-    parser.add_argument('--exp-dir', type=str, default='experiments', help='root directory for experiments')
-    parser.add_argument('--data-dir', type=str, default='data', help='directory for OpenWebText .bin files')
-    parser.add_argument('--log-dir', type=str, default='logs', help='Tensorboard log directory')
-    args = parser.parse_args()
-    print(args)
+    Args:
+        args: additional parameters which can be controlled via command line
+                --exp-name
+                --exp-path
+                --data-dir
+                --log-dir
+    """
 
     # experiment & checkpoint tracking
     exp_path = Path(args.exp_dir) / args.exp_name
@@ -51,10 +49,8 @@ if __name__ == '__main__':
     # data
     data = OpenWebTextData(args.data_dir)
 
-    # model
-
     # resume training if specified
-    if args.resume:
+    if args.checkpoint is not None:
         print(f'resuming training from checkpoint {args.checkpoint}')
         checkpoint = load_checkpoint(args.checkpoint, device=device)
 
@@ -99,7 +95,7 @@ if __name__ == '__main__':
     mixed_precision = config.dtype == torch.float16
     print(f'training with mixed precision: {mixed_precision} dtype={config.dtype}')
     # requires running train.py with PYTORCH_ENABLE_MPS_FALLBACK=1 for MPS since some ops are not implemented yet :(
-    grad_scaler = torch.amp.GradScaler(device=device, enabled=mixed_precision)
+    grad_scaler = torch.amp.GradScaler(device=device.type, enabled=mixed_precision)
 
     if grad_scaler_state_dict is not None:
         print(f'found grad scaler object. loading its state dict.')
@@ -131,7 +127,7 @@ if __name__ == '__main__':
 
         prepare_time = time.time() - start_time # data processing time
 
-        with torch.amp.autocast(device_type=config.device, dtype=config.dtype):
+        with torch.amp.autocast(device_type=device.type, dtype=config.dtype):
             _, loss = model(input_tokens, targets)
             loss = loss / config.gradient_accumulation_steps # divide to account for gradient accumulation
 
@@ -192,7 +188,19 @@ if __name__ == '__main__':
         start_time = time.time()
 
     # clean up
-    del data
+    data = None
 
     writer.flush()
     writer.close()
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser(description='trains GPT-1 on OpenWebText')
+    parser.add_argument('--checkpoint', type=str, default=None, help='path to .ckpt')
+    parser.add_argument('--exp-name', type=str, required=True, help='short experiment name, used for subfolder')
+    parser.add_argument('--exp-dir', type=str, default='experiments', help='root directory for experiments')
+    parser.add_argument('--data-dir', type=str, default='data', help='directory for OpenWebText .bin files')
+    parser.add_argument('--log-dir', type=str, default='logs', help='Tensorboard log directory')
+    args = parser.parse_args()
+
+    train(args)
