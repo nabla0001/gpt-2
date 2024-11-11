@@ -1,7 +1,7 @@
 import argparse
 import time
-import datetime
 from pathlib import Path
+import structlog
 
 import torch
 from torchinfo import summary
@@ -12,8 +12,12 @@ from gpt import GPT
 from config import Config
 from utils import save_checkpoint, load_checkpoint, get_learning_rate, evaluate_loss
 
+
+log = structlog.get_logger(__name__)
+
+
 def train(args: argparse.Namespace) -> None:
-    """model/training configuration is defined in config.py
+    """Main training loop. Model/training configuration is defined in config.py
 
     Args:
         args: additional parameters which can be controlled via command line
@@ -27,11 +31,10 @@ def train(args: argparse.Namespace) -> None:
     exp_path = Path(args.exp_dir) / args.exp_name
     exp_path.mkdir(exist_ok=True, parents=True)
 
-    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    timestamp = time.strftime('%Y%m%d_%H%M%S', time.localtime())
     checkpoint_path = exp_path / (timestamp + '.ckpt.pt')
 
-    print(f'experiment: {args.exp_name}')
-    print(f'exp dir: {exp_path}')
+    log.info('experiment', exp_name=args.exp_name, exp_dir=exp_path)
 
     # tensorboard
     log_dir = Path(args.log_dir) / args.exp_name
@@ -44,14 +47,14 @@ def train(args: argparse.Namespace) -> None:
         device = torch.device('cuda')
     else:
         device = torch.device('cpu')
-    print(f'device: {device}')
+    log.info('device', device=device)
 
     # data
     data = OpenWebTextData(args.data_dir)
 
     # resume training if specified
     if args.checkpoint is not None:
-        print(f'resuming training from checkpoint {args.checkpoint}')
+        log.info('resuming training from checkpoint', checkpoint=args.checkpoint)
         checkpoint = load_checkpoint(args.checkpoint, device=device)
 
         config = checkpoint.get('config')
@@ -66,8 +69,7 @@ def train(args: argparse.Namespace) -> None:
         optimizer = checkpoint.get('optimizer_class')
         optimizer = optimizer(model.parameters(), lr=config.learning_rate)
         optimizer.load_state_dict(checkpoint['optimizer'])
-        print(f'reloading optimizer')
-        print(optimizer)
+        log.info('reloading optimizer', optimizer=optimizer)
 
         start_batch = checkpoint.get('batch_num')
         best_val_loss = checkpoint.get('best_val_loss')
@@ -77,7 +79,7 @@ def train(args: argparse.Namespace) -> None:
 
         checkpoint = None
     else:
-        print(f'training model from scratch')
+        log.info('training model from scratch')
 
         config = Config()
         # TODO: modify from command line
@@ -93,23 +95,24 @@ def train(args: argparse.Namespace) -> None:
 
     # gradient scaler for mixed precision
     mixed_precision = config.dtype == torch.float16
-    print(f'training with mixed precision: {mixed_precision} dtype={config.dtype}')
+    log.info('training with mixed precision', dtype=config.dtype)
     # requires running train.py with PYTORCH_ENABLE_MPS_FALLBACK=1 for MPS since some ops are not implemented yet :(
     grad_scaler = torch.amp.GradScaler(device=device.type, enabled=mixed_precision)
 
     if grad_scaler_state_dict is not None:
-        print(f'found grad scaler object. loading its state dict.')
-        print(grad_scaler_state_dict)
+        log.info('found grad scaler in checkpoint', grad_scaler_state=grad_scaler_state_dict)
         grad_scaler.load_state_dict(grad_scaler_state_dict)
+        log.info('grad scaler state after re-loading its state', grad_scaler_state=grad_scaler.state_dict())
 
     model.train()
-    print(config)
+    log.info('experiment config', config=config)
 
     # print model summary
     input_data = torch.randint(0, config.gpt.vocab_size,
                                size=(config.batch_size, config.gpt.context_size),
                                device=device)
-    print(summary(model, input_data=input_data))
+    # print(summary(model, input_data=input_data))
+    log.info('model summary', model_summary=summary(model, input_data=input_data))
 
     start_time = time.time()
 
@@ -145,9 +148,12 @@ def train(args: argparse.Namespace) -> None:
         if batch_num % config.log_interval == 0:
             compute_efficiency = process_time/(process_time+prepare_time)
             loss_m = loss.item() * config.gradient_accumulation_steps # re-scale after division above
-            print(f'[iter {batch_num:06d}/{config.n_batches-1:06d}]\tloss: {loss_m:<.2f}\t'
-                  f'compute efficiency {compute_efficiency:.2f}\tprep time {prepare_time:.2f}s\tprocess time {process_time:.2f}s'
-                  f'\ttotal batch time: {process_time+prepare_time:.2f}s')
+            log.info(f'batch [{batch_num:07d}/{config.n_batches:07d}]\tloss={loss_m:.2f}',
+                     compute_efficiency=f'{compute_efficiency:.2f}',
+                     prep_time=f'{prepare_time:.2f}s',
+                     process_time=f'{process_time: .2f}s',
+                     batch_time=f'{process_time+prepare_time:.2f}s')
+
             writer.add_scalar('loss/batch', loss_m, batch_num)
             writer.add_scalar(f'learning rate', optimizer.param_groups[0]['lr'], batch_num) if len(optimizer.param_groups) == 1 else None
             writer.add_scalar('compute efficiency [%]', compute_efficiency, batch_num)
@@ -161,7 +167,10 @@ def train(args: argparse.Namespace) -> None:
                                    n_batches=config.n_eval_batches,
                                    batch_size=config.batch_size,
                                    seq_len=config.gpt.context_size)
-            print(f"Losses\ttrain: {losses['train']:.2f}\ttest: {losses['test']:.2f}")
+            log.info(f'batch [{batch_num:07d}/{config.n_batches:07d}]',
+                     train_loss=f'{losses['train']:.2f}',
+                     test_loss=f'{losses['test']:.2f}',
+                     n=config.n_eval_batches*config.batch_size)
             writer.add_scalars('loss', losses, batch_num)
             writer.flush()
 
@@ -173,17 +182,7 @@ def train(args: argparse.Namespace) -> None:
                               batch_num=batch_num,
                               best_val_loss=best_val_loss)
                 save_checkpoint(checkpoint_path, model, optimizer, **kwargs)
-                print(f'saved checkpoint to {checkpoint_path}')
-
-        # save checkpoint
-        if batch_num % config.checkpoint_interval == 0 and batch_num > 0:
-            kwargs = dict(config=config,
-                          optimizer_class=optimizer.__class__,
-                          grad_scaler=grad_scaler.state_dict(),
-                          batch_num=batch_num,
-                          best_val_loss=best_val_loss)
-            save_checkpoint(checkpoint_path, model, optimizer, **kwargs)
-            print(f'saved checkpoint to {checkpoint_path}')
+                log.info(f'saved checkpoint to {checkpoint_path}')
 
         start_time = time.time()
 
