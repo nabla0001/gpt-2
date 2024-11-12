@@ -43,7 +43,6 @@ class GPT(nn.Module):
         out = self.transformer.ln(out)
 
         # N, CONTEXT_SIZE, EMBED_D
-        # logits = self.lm_head(out[:, -1, :]) # N, VOCAB_SIZE
         loss = None
         logits = self.lm_head(out) # N, CONTEXT_LENGTH, VOCAB_SIZE
 
@@ -95,7 +94,10 @@ class GPT(nn.Module):
 
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
-            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            std = 0.02
+            if hasattr(module, 'SCALE_INIT_VAR'):
+                std *= (self.config.n_layers * 2) ** -0.5
+            torch.nn.init.normal_(module.weight, mean=0.0, std=std)
             if module.bias is not None:
                 torch.nn.init.zeros_(module.bias)
         elif isinstance(module, nn.Embedding):
@@ -145,6 +147,7 @@ class MultiheadSelfAttention(nn.Module):
         self.attn_dropout = nn.Dropout(config.dropout)
         self.out_dropout = nn.Dropout(config.dropout)
         self.out_linear = nn.Linear(config.embedding_size, config.embedding_size)
+        self.out_linear.SCALE_INIT_VAR = True # as per paper
 
     def forward(self, x: FloatTensor) -> FloatTensor:
         N, T, D = x.size()  # N, CONTEXT_SIZE, EMBEDDING_SIZE
@@ -182,6 +185,7 @@ class FFN(nn.Module):
         self.fc1 = nn.Linear(config.embedding_size, 4 * config.embedding_size)
         self.gelu = nn.GELU()
         self.fc2 = nn.Linear(4 * config.embedding_size, config.embedding_size)
+        self.fc2.SCALE_INIT_VAR = True # as per paper
         self.dropout = nn.Dropout(config.dropout)
 
     def forward(self, x: FloatTensor) -> FloatTensor:
