@@ -1,5 +1,6 @@
 import pytest
 import torch
+from scipy.signal import max_len_seq
 
 from gpt import GPTConfig, MultiheadSelfAttention, FFN, TransformerBlock, GPT
 from data import OpenWebTextData
@@ -88,6 +89,21 @@ def test_gpt_w_short_input(config, n=10):
     output, _ = gpt(x)
     assert output.shape == (n, input_seq_len, config.vocab_size)
 
+@torch.no_grad()
+def test_gpt_generation(config, n=10):
+    input_seq_len = 10
+    max_new_tokens = 20
+
+    gpt = GPT(config)
+    x = torch.randint(0, config.vocab_size, size=(n, input_seq_len))
+
+    # temperature scaling only (no top_k)
+    output = gpt.generate(x, max_new_tokens=max_new_tokens)
+    assert output.shape == (n, input_seq_len + max_new_tokens)
+
+    # top_k
+    output = gpt.generate(x, max_new_tokens=max_new_tokens, top_k=10)
+    assert output.shape == (n, input_seq_len + max_new_tokens)
 
 @torch.no_grad()
 def test_gpt_loss_with_targets(config, n=10):

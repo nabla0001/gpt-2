@@ -50,9 +50,44 @@ class GPT(nn.Module):
         if targets is not None:
             targets = targets.view(-1)  # N*CONTEXT_SIZE,
             logits_reshaped = logits.view(-1, logits.size(-1))  # N*CONTEXT_SIZE, VOCAB_SIZE
-            loss = torch.nn.functional.cross_entropy(logits_reshaped, targets, ignore_index=-1)
+            loss = nn.functional.cross_entropy(logits_reshaped, targets, ignore_index=-1)
 
         return logits, loss
+
+    def generate(self,
+                 x: torch.LongTensor,
+                 max_new_tokens: int,
+                 temperature: float = 1.0,
+                 top_k: Optional[int] = None) -> torch.FloatTensor:
+        """Autoregressive sampling
+
+        Args:
+            x:              input token sequence of size N, SEQUENCE_LENGTH
+            max_new_tokens: maximum generated sequence length
+            temperature:    parameter for dividing logits (the closer to 0, the greedier)
+            top_k:
+        Returns:
+            x+generated tokens
+        """
+        for i in range(max_new_tokens):
+
+            x_cond = x if x.size(1) <= self.config.context_size else x[:, -self.config.context_size:]
+
+            logits, _ = self(x_cond)
+            logits = logits[:, -1, :] # for generation, we only need predict at last token
+            logits = logits / temperature
+
+            if top_k is not None:
+                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                logits[logits < v[:, [-1]]] = -float('Inf')
+
+            # normalize to probability distribution
+            p = nn.functional.softmax(logits, dim=-1)
+            # sample
+            next_token = torch.multinomial(p, num_samples=1) # N, 1
+            # add to input for next step
+            x = torch.cat((x, next_token), dim=1)
+        return x
 
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
