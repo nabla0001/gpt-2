@@ -55,8 +55,8 @@ def train(args: argparse.Namespace) -> None:
 
     # resume training if specified
     if args.checkpoint is not None:
-        log.info('resuming training from checkpoint', checkpoint=args.checkpoint)
         checkpoint = load_checkpoint(args.checkpoint, device=device)
+        log.info('resuming training from checkpoint', checkpoint=args.checkpoint)
 
         config_args = checkpoint.get('config')
         config = Config(**config_args)
@@ -76,7 +76,6 @@ def train(args: argparse.Namespace) -> None:
 
         start_batch = checkpoint.get('batch_num')
         best_val_loss = checkpoint.get('best_val_loss')
-        num_tokens_seen = checkpoint.get('num_tokens_seen', 0)
 
         # gradient scaler state for mixed precision
         grad_scaler_state_dict = checkpoint.get('grad_scaler')
@@ -95,7 +94,6 @@ def train(args: argparse.Namespace) -> None:
 
         start_batch = 0
         best_val_loss = float('inf')
-        num_tokens_seen = 0
         grad_scaler_state_dict = None
 
     # gradient scaler for mixed precision
@@ -119,10 +117,9 @@ def train(args: argparse.Namespace) -> None:
     log.info('model summary')
     log.info(summary(model, input_data=input_data))
 
-    start_time = time.time()
-
     optimizer.zero_grad(set_to_none=True)
     for batch_num in range(start_batch, config.n_batches):
+        t0 = time.time()
 
         # update learning rate
         lr = get_learning_rate(batch_num, config)
@@ -132,8 +129,6 @@ def train(args: argparse.Namespace) -> None:
         input_tokens, targets = data.get_batch('train', config.batch_size, config.gpt.context_size)
         input_tokens = input_tokens.to(device)
         targets = targets.to(device)
-
-        prepare_time = time.time() - start_time # data processing time
 
         with torch.amp.autocast(device_type=device.type, dtype=config.dtype):
             _, loss = model(input_tokens, targets)
@@ -148,26 +143,20 @@ def train(args: argparse.Namespace) -> None:
             grad_scaler.update()
             optimizer.zero_grad(set_to_none=True)
 
-        num_tokens_seen += config.batch_size * config.gpt.context_size
-
-        process_time = time.time() - prepare_time - start_time # forward+backward processing time
+        t1 = time.time()
+        batch_time_ms = (t1 - t0) * 1000
+        tokens_per_sec = (config.batch_size * config.gpt.context_size) / (t1 - t0)
 
         if batch_num % config.log_interval == 0:
-            compute_efficiency = process_time/(process_time+prepare_time)
             loss_m = loss.item() * config.gradient_accumulation_steps # re-scale after division above
             log.info(f'batch [{batch_num:07d}/{config.n_batches:07d}]\tloss={loss_m:.2f}',
-                     num_tokens_seen=num_tokens_seen,
-                     compute_efficiency=f'{compute_efficiency:.2f}',
-                     prep_time=f'{prepare_time:.2f}s',
-                     process_time=f'{process_time:.2f}s',
-                     batch_time=f'{process_time+prepare_time:.2f}s')
+                     tokens_per_sec=f'{tokens_per_sec:.1f}',
+                     batch_time_ms=f'{batch_time_ms:.1f}ms')
 
             writer.add_scalar('loss/batch', loss_m, batch_num)
             writer.add_scalar(f'learning rate', optimizer.param_groups[0]['lr'], batch_num) if len(optimizer.param_groups) == 1 else None
-            writer.add_scalar('compute efficiency [%]', compute_efficiency, batch_num)
-            writer.add_scalar('prep time [s]', prepare_time, batch_num)
-            writer.add_scalar('process time [s]', process_time, batch_num)
-            writer.add_scalar('total batch time [s]', process_time+prepare_time, batch_num)
+            writer.add_scalar('tokens per second', tokens_per_sec, batch_num)
+            writer.add_scalar('total batch time [ms]', batch_time_ms, batch_num)
 
         # evaluate test loss
         if batch_num % config.eval_interval == 0 and batch_num > 0:
@@ -178,7 +167,6 @@ def train(args: argparse.Namespace) -> None:
             log.info(f'batch [{batch_num:07d}/{config.n_batches:07d}] evaluation',
                      train_loss=f'{losses['train']:.2f}',
                      test_loss=f'{losses['test']:.2f}',
-                     num_tokens_seen=num_tokens_seen,
                      n=config.n_eval_batches*config.batch_size)
             writer.add_scalars('loss', losses, batch_num)
             writer.flush()
@@ -189,12 +177,9 @@ def train(args: argparse.Namespace) -> None:
                               optimizer_class=optimizer.__class__,
                               grad_scaler=grad_scaler.state_dict(),
                               batch_num=batch_num,
-                              num_tokens_seen=num_tokens_seen,
                               best_val_loss=best_val_loss)
                 save_checkpoint(checkpoint_path, model, optimizer, **kwargs)
                 log.info(f'saved checkpoint to {checkpoint_path}')
-
-        start_time = time.time()
 
     # clean up
     data = None
