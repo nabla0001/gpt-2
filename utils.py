@@ -2,8 +2,7 @@ import torch
 from config import Config
 from data import OpenWebTextData
 from pathlib import Path
-from tqdm import tqdm
-
+import math
 
 @torch.no_grad()
 def evaluate_loss(model: torch.nn.Module,
@@ -42,11 +41,10 @@ def load_checkpoint(path: str | Path, device: str | torch.device) -> dict:
 
 
 def get_learning_rate(batch_num: int, config: Config) -> float:
-    import math
     lr_decay_iters = config.n_batches
     # 1) linear warmup for warmup_iters steps
     if batch_num < config.warmup_iters:
-        return config.learning_rate * batch_num / config.warmup_iters
+        return config.learning_rate * (batch_num+1) / config.warmup_iters
     # 2) if it > lr_decay_iters, return min learning rate
     if batch_num > lr_decay_iters:
         return config.min_lr

@@ -90,7 +90,10 @@ def train(args: argparse.Namespace) -> None:
         model = GPT(config.gpt)
         model.to(device)
 
-        optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
+        # optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
+        optimizer = torch.optim.AdamW(model.parameters(),
+                                      lr=config.learning_rate,
+                                      betas=(config.beta1, config.beta2))
 
         start_batch = 0
         best_val_loss = float('inf')
@@ -120,6 +123,7 @@ def train(args: argparse.Namespace) -> None:
     optimizer.zero_grad(set_to_none=True)
     for batch_num in range(start_batch, config.n_batches):
         t0 = time.time()
+        grad_norm = -1. # grad_norm is only calculated every [gradient_accumulation_steps] batches, default value
 
         # update learning rate
         lr = get_learning_rate(batch_num, config)
@@ -139,6 +143,10 @@ def train(args: argparse.Namespace) -> None:
 
         # parameter update every [gradient_accumulation_steps] steps
         if (batch_num+1) % config.gradient_accumulation_steps == 0:
+            # clip the gradient
+            if config.grad_clip > 0.0:
+                grad_scaler.unscale_(optimizer)
+                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_clip)
             grad_scaler.step(optimizer)
             grad_scaler.update()
             optimizer.zero_grad(set_to_none=True)
@@ -151,7 +159,8 @@ def train(args: argparse.Namespace) -> None:
             loss_m = loss.item() * config.gradient_accumulation_steps # re-scale after division above
             log.info(f'batch [{batch_num:07d}/{config.n_batches:07d}]\tloss={loss_m:.2f}',
                      tokens_per_sec=f'{tokens_per_sec:.1f}',
-                     batch_time_ms=f'{batch_time_ms:.1f}ms')
+                     batch_time_ms=f'{batch_time_ms:.1f}ms',
+                     grad_norm=f'{grad_norm:.1f}')
 
             writer.add_scalar('loss/batch', loss_m, batch_num)
             writer.add_scalar(f'learning rate', optimizer.param_groups[0]['lr'], batch_num) if len(optimizer.param_groups) == 1 else None
