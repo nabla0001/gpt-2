@@ -159,7 +159,7 @@ def train(args: argparse.Namespace) -> None:
                      num_tokens_seen=num_tokens_seen,
                      compute_efficiency=f'{compute_efficiency:.2f}',
                      prep_time=f'{prepare_time:.2f}s',
-                     process_time=f'{process_time: .2f}s',
+                     process_time=f'{process_time:.2f}s',
                      batch_time=f'{process_time+prepare_time:.2f}s')
 
             writer.add_scalar('loss/batch', loss_m, batch_num)

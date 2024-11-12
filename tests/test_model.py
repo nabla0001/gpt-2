@@ -80,6 +80,16 @@ def test_gpt(config, n=10):
 
 
 @torch.no_grad()
+def test_gpt_w_short_input(config, n=10):
+    input_seq_len = 10
+    gpt = GPT(config)
+    assert input_seq_len < gpt.config.context_size
+    x = torch.randint(0, config.vocab_size, size=(n, input_seq_len))
+    output, _ = gpt(x)
+    assert output.shape == (n, input_seq_len, config.vocab_size)
+
+
+@torch.no_grad()
 def test_gpt_loss_with_targets(config, n=10):
     gpt = GPT(config)
     x = torch.randint(0, config.vocab_size, size=(n, config.context_size))
