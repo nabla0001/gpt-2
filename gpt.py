@@ -74,7 +74,11 @@ class GPT(nn.Module):
             x_cond = x if x.size(1) <= self.config.context_size else x[:, -self.config.context_size:]
 
             logits, _ = self(x_cond)
-            logits = logits[:, -1, :] # for generation, we only need predict at last token
+
+            # ignore outputs beyond vocabulary of 50,257 added for efficiency
+            logits = logits[:, :, :self.config.vocab_size]
+
+            logits = logits[:, -1, :] # for generation, we only need prediction at last token
             logits = logits / temperature
 
             if top_k is not None:
