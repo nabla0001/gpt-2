@@ -41,7 +41,7 @@ def load_checkpoint(path: str | Path, device: str | torch.device) -> dict:
 
 
 def get_learning_rate(batch_num: int, config: Config) -> float:
-    lr_decay_iters = config.n_batches
+    lr_decay_iters = config.n_steps
     # 1) linear warmup for warmup_iters steps
     if batch_num < config.warmup_iters:
         return config.learning_rate * (batch_num+1) / config.warmup_iters

@@ -74,7 +74,8 @@ def train(args: argparse.Namespace) -> None:
         optimizer.load_state_dict(checkpoint['optimizer'])
         log.info('reloading optimizer', optimizer=optimizer)
 
-        start_batch = checkpoint.get('batch_num')
+        token_total = checkpoint.get('token_total', 0)
+        start_step = checkpoint.get('step')
         best_val_loss = checkpoint.get('best_val_loss')
 
         # gradient scaler state for mixed precision
@@ -95,7 +96,8 @@ def train(args: argparse.Namespace) -> None:
                                       lr=config.learning_rate,
                                       betas=(config.beta1, config.beta2))
 
-        start_batch = 0
+        token_total = 0
+        start_step = 0
         best_val_loss = float('inf')
         grad_scaler_state_dict = None
 
@@ -121,63 +123,70 @@ def train(args: argparse.Namespace) -> None:
     log.info(summary(model, input_data=input_data))
 
     optimizer.zero_grad(set_to_none=True)
-    for batch_num in range(start_batch, config.n_batches):
+    for step in range(start_step, config.n_steps):
         t0 = time.time()
-        grad_norm = -1. # grad_norm is only calculated every [gradient_accumulation_steps] batches, default value
 
         # update learning rate
-        lr = get_learning_rate(batch_num, config)
+        lr = get_learning_rate(step, config)
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr
 
-        input_tokens, targets = data.get_batch('train', config.batch_size, config.gpt.context_size)
-        input_tokens = input_tokens.to(device)
-        targets = targets.to(device)
-
-        with torch.amp.autocast(device_type=device.type, dtype=config.dtype):
-            _, loss = model(input_tokens, targets)
-            loss = loss / config.gradient_accumulation_steps # divide to account for gradient accumulation
-
         # accumulate gradients
-        grad_scaler.scale(loss).backward()
+        loss_accum = 0.0
+        for _ in range(config.gradient_accumulation_steps):
 
-        # parameter update every [gradient_accumulation_steps] steps
-        if (batch_num+1) % config.gradient_accumulation_steps == 0:
-            # clip the gradient
-            if config.grad_clip > 0.0:
-                grad_scaler.unscale_(optimizer)
-                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_clip)
-            grad_scaler.step(optimizer)
-            grad_scaler.update()
-            optimizer.zero_grad(set_to_none=True)
+            input_tokens, targets = data.get_batch('train', config.batch_size, config.gpt.context_size)
+            input_tokens = input_tokens.to(device)
+            targets = targets.to(device)
+
+            with torch.amp.autocast(device_type=device.type, dtype=config.dtype):
+                _, loss = model(input_tokens, targets)
+                loss = loss / config.gradient_accumulation_steps # divide to account for gradient accumulation
+                loss_accum += loss.detach()
+
+            # scale gradients for backward pass
+            grad_scaler.scale(loss).backward()
+
+        # clip the gradient
+        if config.grad_clip > 0.0:
+            grad_scaler.unscale_(optimizer)
+            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_clip)
+        else:
+            grad_norm = -1. # dummy value for logging if we are not clipping
+        # parameter update
+        grad_scaler.step(optimizer)
+        grad_scaler.update()
+        optimizer.zero_grad(set_to_none=True)
 
         t1 = time.time()
         batch_time_ms = (t1 - t0) * 1000
-        tokens_per_sec = (config.batch_size * config.gpt.context_size) / (t1 - t0)
+        tokens_per_sec = (config.batch_size * config.gpt.context_size * config.gradient_accumulation_steps) / (t1 - t0)
 
-        if batch_num % config.log_interval == 0:
-            loss_m = loss.item() * config.gradient_accumulation_steps # re-scale after division above
-            log.info(f'batch [{batch_num:07d}/{config.n_batches:07d}]\tloss={loss_m:.2f}',
+        token_total += (config.batch_size * config.gpt.context_size * config.gradient_accumulation_steps) / (1000 ** 2)  # in millions
+
+        if step % config.log_interval == 0:
+            log.info(f'step [{step:07d}/{config.n_steps:07d}]\tloss={loss_accum:.2f}',
                      tokens_per_sec=f'{tokens_per_sec:.1f}',
                      batch_time_ms=f'{batch_time_ms:.1f}ms',
-                     grad_norm=f'{grad_norm:.1f}')
+                     grad_norm=f'{grad_norm:.1f}',
+                     token_total=f'{token_total:.3f}M')
 
-            writer.add_scalar('loss/batch', loss_m, batch_num)
-            writer.add_scalar(f'learning rate', optimizer.param_groups[0]['lr'], batch_num) if len(optimizer.param_groups) == 1 else None
-            writer.add_scalar('tokens per second', tokens_per_sec, batch_num)
-            writer.add_scalar('total batch time [ms]', batch_time_ms, batch_num)
+            writer.add_scalar('loss/batch', loss_accum, step)
+            writer.add_scalar(f'learning rate', optimizer.param_groups[0]['lr'], step) if len(optimizer.param_groups) == 1 else None
+            writer.add_scalar('tokens per second', tokens_per_sec, step)
+            writer.add_scalar('total batch time [ms]', batch_time_ms, step)
 
         # evaluate test loss
-        if batch_num % config.eval_interval == 0 and batch_num > 0:
+        if step % config.eval_interval == 0 and step > 0:
             losses = evaluate_loss(model, data, device,
                                    n_batches=config.n_eval_batches,
                                    batch_size=config.batch_size,
                                    seq_len=config.gpt.context_size)
-            log.info(f'batch [{batch_num:07d}/{config.n_batches:07d}] evaluation',
+            log.info(f'batch [{step:07d}/{config.n_steps:07d}] evaluation',
                      train_loss=f'{losses['train']:.2f}',
                      test_loss=f'{losses['test']:.2f}',
                      n=config.n_eval_batches*config.batch_size)
-            writer.add_scalars('loss', losses, batch_num)
+            writer.add_scalars('loss', losses, step)
             writer.flush()
 
             if losses['test'] < best_val_loss:
@@ -185,8 +194,9 @@ def train(args: argparse.Namespace) -> None:
                 kwargs = dict(config=asdict(config),
                               optimizer_class=optimizer.__class__,
                               grad_scaler=grad_scaler.state_dict(),
-                              batch_num=batch_num,
-                              best_val_loss=best_val_loss)
+                              step=step,
+                              best_val_loss=best_val_loss,
+                              token_total=token_total)
                 save_checkpoint(checkpoint_path, model, optimizer, **kwargs)
                 log.info(f'saved checkpoint to {checkpoint_path}')
 
