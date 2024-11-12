@@ -76,6 +76,7 @@ def train(args: argparse.Namespace) -> None:
 
         start_batch = checkpoint.get('batch_num')
         best_val_loss = checkpoint.get('best_val_loss')
+        num_tokens_seen = checkpoint.get('num_tokens_seen', 0)
 
         # gradient scaler state for mixed precision
         grad_scaler_state_dict = checkpoint.get('grad_scaler')
@@ -94,6 +95,7 @@ def train(args: argparse.Namespace) -> None:
 
         start_batch = 0
         best_val_loss = float('inf')
+        num_tokens_seen = 0
         grad_scaler_state_dict = None
 
     # gradient scaler for mixed precision
@@ -146,12 +148,15 @@ def train(args: argparse.Namespace) -> None:
             grad_scaler.update()
             optimizer.zero_grad(set_to_none=True)
 
+        num_tokens_seen += config.batch_size * config.gpt.context_size
+
         process_time = time.time() - prepare_time - start_time # forward+backward processing time
 
         if batch_num % config.log_interval == 0:
             compute_efficiency = process_time/(process_time+prepare_time)
             loss_m = loss.item() * config.gradient_accumulation_steps # re-scale after division above
             log.info(f'batch [{batch_num:07d}/{config.n_batches:07d}]\tloss={loss_m:.2f}',
+                     num_tokens_seen=num_tokens_seen,
                      compute_efficiency=f'{compute_efficiency:.2f}',
                      prep_time=f'{prepare_time:.2f}s',
                      process_time=f'{process_time: .2f}s',
@@ -173,6 +178,7 @@ def train(args: argparse.Namespace) -> None:
             log.info(f'batch [{batch_num:07d}/{config.n_batches:07d}] evaluation',
                      train_loss=f'{losses['train']:.2f}',
                      test_loss=f'{losses['test']:.2f}',
+                     num_tokens_seen=num_tokens_seen,
                      n=config.n_eval_batches*config.batch_size)
             writer.add_scalars('loss', losses, batch_num)
             writer.flush()
@@ -183,6 +189,7 @@ def train(args: argparse.Namespace) -> None:
                               optimizer_class=optimizer.__class__,
                               grad_scaler=grad_scaler.state_dict(),
                               batch_num=batch_num,
+                              num_tokens_seen=num_tokens_seen,
                               best_val_loss=best_val_loss)
                 save_checkpoint(checkpoint_path, model, optimizer, **kwargs)
                 log.info(f'saved checkpoint to {checkpoint_path}')
