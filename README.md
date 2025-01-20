@@ -1,22 +1,20 @@
 # Building GPT-2 in PyTorch
 
-The goal of this project is to re-create the second [**Generative Pre-trained Transformer (GPT)**](https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf) aka 
+In this project I implemented the second [**Generative Pre-trained Transformer (GPT)**](https://cdn.openai.com/research-covers/language-unsupervised/language_understanding_paper.pdf) aka 
 **GPT-2** (Radford et al. 2019) from the ground up in PyTorch.
 
-
-We will train it on [OpenWebText](https://skylion007.github.io/OpenWebTextCorpus/), 
-an open-source approximation of OpenAI's proprietary WebText dataset which was used in the original paper.
-This dataset is sufficiently large to expose us to some of the challenges of large-scale training and challenge us to care about
-efficiency in tokenization, data-processing and model.
-At the same time, it is possible to train on this data on consumer-grade hardware (🤞).
-
+This repo contains:
+1. a concise, efficient implementation of GPT-2
+2. code to prepare [OpenWebText](https://skylion007.github.io/OpenWebTextCorpus/), 
+an open-source approximation of OpenAI's proprietary WebText dataset used in the original paper.
+3. unit tests to test the correctness of the implementation
 
 ## Acknowledgement
 
 The code is strongly inspired by Andrej Karpathy's fantastic [nanoGPT](https://github.com/karpathy/nanoGPT/tree/master) but aims to 
 focus entirely on understanding and re-producing GPT-2.
 This means that a good chunk of additional functionality Andrej is building in his repo to make it applicable to a variety 
-of tasks like fine-tuning is dropped to hopefully provide a more readable, clean (yet efficient)
+of tasks like fine-tuning is dropped to hopefully provide a more concise, clean (yet efficient)
 implementation for those interested in the original paper.
 
 
