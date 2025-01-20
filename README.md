@@ -6,8 +6,7 @@ In this project I implemented the second [**Generative Pre-trained Transformer (
 This repo contains:
 1. a concise, efficient implementation of GPT-2
 2. code to prepare [OpenWebText](https://skylion007.github.io/OpenWebTextCorpus/), 
-an open-source approximation of OpenAI's proprietary WebText dataset used in the original paper.
-3. unit tests to test the correctness of the implementation
+an open-source approximation of OpenAI's proprietary WebText dataset used in the original paper
 
 ## Acknowledgement
 
